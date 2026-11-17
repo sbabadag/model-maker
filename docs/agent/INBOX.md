@@ -633,6 +633,34 @@ Durum: AÇIK
 > bak, (l) `anchorType` TextParam. Sonra STATE'e "Studio: MMCS_BUILD_CONTRACT_OWN_TESTS
 > yeniden ON yapılabilir (<hash>)" yaz. T-planı ve diğer işler bundan SONRA.
 
+> **C-0 KAPANDI (Hermes, 2026-11-17 15:20) — commit `4ad6237`.**
+> 1) Kök neden: kök `CMakeLists.txt` `libs/mm_contract/CMakeLists.txt`'i
+> `add_subdirectory` ile DAHİL ETMİYOR (mm_component_contract kökte ayrı
+> tanımlı); o dosyadaki bağımsız test hedefleri bu yüzden MM kapısında hiç
+> koşmuyordu. `2b577e6` yalnız `recipe_test`'i elle eklemişti. Aynı kusur
+> sınıfı **13 testte** daha vardı → hepsi kökte tek tek hedef olarak eklendi:
+> `contract_smoke`, `component_codec`, `recipe_canonical_text`,
+> `end_plate_equivalence`, `haunch40_equivalence`, `haunch40_param_flow`,
+> `haunch40_symmetric_roll`, `digest_identity_proof`, `component_package`,
+> `component_preview`, `component_preview_auto`, `component_checks`,
+> `member_geometry_canonical`, `component_visual`. **ctest 171 → 185**.
+> 2) Kırmızılar: yalnız bayat sürüm literali (1.11.0) — `contract_smoke_test`
+> ve `component_codec_test` **literal 1.24.0**'a çekildi; smoke 1.12–1.24
+> arası tüm minor'ları tek tek doğruluyor (1.25 ret). Başka kırmızı YOKTU;
+> hiçbir test gevşetilmedi.
+> 3) Kapsam (her sürüm en az bir bölüm): a=1.12, b=1.13, c=1.14, g=1.15,
+> d=1.16, i=1.17, h=1.18, e=1.19, j=1.20, k=1.21, f=1.22, p2=1.23
+> (+sürüm alanı tutarlılığı), re=1.24, l=1.25 — `contract_requests_test`.
+> 5/(l) `bolts.grid {anchorType: "param.<ad>"}` **kontrat 1.25.0**: `strArg` →
+> `strParamArg` (literal korunur, tanımsız/metin olmayan parametre AÇIK ret),
+> taş bildiriminde `anchorType` artık `strParamArgs` (tür `TextParam`, taş
+> sayısı 20). Test yazarken **gerçek kusur** çıktı ve düzeltildi:
+> `blockDeclarations()` bir argüman **yalnız** `strParamArgs`/`boolParamArgs`/
+> `memberArgs`/`exprListArgs` içinde geçtiğinde `byName[k]` varsayılan
+> `BlockArgDecl` oluşturup **adı boş** bırakıyordu → statik analiz "bilinmeyen
+> argüman" diye REDDEDİYORDU. Dört döngüde de ad yazılır hâle getirildi.
+> Kanıt: `c0-gate.log` **185/185**, BUILD_EXIT=0, CTEST_EXIT=0; codec golden
+> 5/5 birebir (digest değişmedi → Studio REPIN gerekmiyor).
 ## P-1 kalanlar + gece bulguları (planlayıcı, 2026-11-11 sabah) — P-2'DEN ÖNCE
 Sıra:
 1. **P-1/8 + P-1/9:** GUI senaryosu tamamlama + KABUL PAKETİ (henüz yok;

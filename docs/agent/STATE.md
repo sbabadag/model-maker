@@ -822,3 +822,25 @@ sürerken yalnız `docs/` düzenlenir.
 - Acik: kullanici akisinda tetiklenen yol bulunamadi. Istenen: .mmw dosyasi
   veya pick sirasi (hangi uye once, hangi yuzey).
 - Kosucu: `appGeomCompare` `only` modunda belge buyumesi eslesmeme sayilmaz.
+
+## C-0 KAPANDI — contract kendi testleri kapida (2026-11-17, `4ad6237`)
+
+- **Studio: MMCS_BUILD_CONTRACT_OWN_TESTS yeniden ON yapılabilir (4ad6237)**
+- Kök neden: kök CMake, `libs/mm_contract/CMakeLists.txt`'i add_subdirectory
+  ile dahil etmiyor → 14 bağımsız contract testi MM kapısında hiç koşmuyordu.
+  Hepsi kökte tek tek hedef: `model_maker_contract_{smoke,codec,
+  recipe_canonical_text,end_plate_equivalence,haunch40_equivalence,
+  haunch40_param_flow,haunch40_symmetric_roll,digest_identity_proof,
+  component_package,component_preview,component_preview_auto,
+  component_checks,member_geometry_canonical,component_visual}_test`.
+- ctest **171 → 185**; kapı `c0-gate.log` 185/185, BUILD_EXIT=0, CTEST_EXIT=0.
+- Bayat beklentiler: smoke + codec sürüm literali 1.11.0 → **1.24.0**; smoke
+  1.12–1.24 arası tüm minor'ları tek tek doğrular. Başka kırmızı yoktu.
+- Kontrat **1.25.0** (istek l): `bolts.grid {anchorType: "param.<ad>"}`
+  (TextParam; literal korunur; tanımsız/metin olmayan parametre açık ret).
+  Taş sayısı 20, golden digest'ler **değişmedi** → Studio REPIN gerekmiyor.
+- Yan bulgu (düzeltildi): `blockDeclarations()` argüman adı yalnız
+  `strParamArgs`/`boolParamArgs`/`memberArgs`/`exprListArgs` içindeyse
+  `BlockArgDecl.name` BOŞ kalıyordu → statik analiz "bilinmeyen argüman"
+  diyordu (latent kusur sınıfı; 4 döngüde ad yazılır).
+- Kapsam eşlemesi: contract_requests_test bölüm a=1.12 … re=1.24, l=1.25.
