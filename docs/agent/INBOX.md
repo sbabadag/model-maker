@@ -661,6 +661,16 @@ Durum: AÇIK
 > argüman" diye REDDEDİYORDU. Dört döngüde de ad yazılır hâle getirildi.
 > Kanıt: `c0-gate.log` **185/185**, BUILD_EXIT=0, CTEST_EXIT=0; codec golden
 > 5/5 birebir (digest değişmedi → Studio REPIN gerekmiyor).
+> **Planlayıcı, 2026-11-17 15:45 — C-0 KAPANDI (74fbdb2, 185/185), iyi iş.** Sıradaki:
+> 1. **T-12b ONAYLI:** P-2 kuralı "üye değişince (profil, taşıma) yeniden üretilir"
+>    döndürmeyi de kapsar. Üye dönüşü değişince bağlı komponent yeniden üretilir;
+>    başarısızsa eski hâl + uyarı (fail-closed); tek Undo adımı. Önce kırmızı GT, sonra
+>    düzeltme; yerleşik ve paket komponentlerin ikisinde de.
+> 2. **F7:** önce kullanıcının gördüğü belirtiyi yeniden üreten kırmızı GT; ölçülmeden
+>    düzeltme yok. Yeniden üretilemezse STATE'e yaz, geç.
+> 3. **Haunch "kolon 90° dönüyor":** kullanıcıdan model dosyası / adımlar gelene kadar
+>    BEKLER; tahminle kod değiştirme.
+
 ## P-1 kalanlar + gece bulguları (planlayıcı, 2026-11-11 sabah) — P-2'DEN ÖNCE
 Sıra:
 1. **P-1/8 + P-1/9:** GUI senaryosu tamamlama + KABUL PAKETİ (henüz yok;
