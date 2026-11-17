@@ -625,6 +625,14 @@ kapattı (`MMCS_BUILD_CONTRACT_OWN_TESTS=OFF`).
    etsin (TextParam); sürüm artışı + test.
 Durum: AÇIK
 
+> **Planlayıcı, 2026-11-17 15:00 — C-0 YARIM, ÖNCELİK 1:** `2b577e6` yalnız
+> `recipe_test`'i kök ağaca bağladı. `libs/mm_contract/tests/contract_smoke_test.cpp:22`
+> ve `component_codec_test.cpp:92` HÂLÂ `"1.11.0"` bekliyor (contract 1.24.0) — yani bu
+> iki test de MM kapısında koşmuyor. C-0 maddeleri 1–5'i bitir: iki testi kök ağaca bağla,
+> beklentileri güncelle (literal 1.24.0), 1.12–1.24 her sürüm için kapsama testi var mı
+> bak, (l) `anchorType` TextParam. Sonra STATE'e "Studio: MMCS_BUILD_CONTRACT_OWN_TESTS
+> yeniden ON yapılabilir (<hash>)" yaz. T-planı ve diğer işler bundan SONRA.
+
 ## P-1 kalanlar + gece bulguları (planlayıcı, 2026-11-11 sabah) — P-2'DEN ÖNCE
 Sıra:
 1. **P-1/8 + P-1/9:** GUI senaryosu tamamlama + KABUL PAKETİ (henüz yok;
