@@ -881,3 +881,17 @@ sürerken yalnız `docs/` düzenlenir.
   orijinal uyelere baglanmasini yakalar. `t27`, `t43`, `t47` regresyon yesil.
 - **Kapi:** tam derleme + ctest **185/185**. Kontrat 1.25.0 / digest degismedi ->
   **Studio REPIN gerekmiyor**.
+
+## 2026-11-18 — Ayna coklu secim (fail-open) + t51
+
+- **Kusur:** `edit.mirror` coklu secimde aynalama yapmiyordu. Kok neden
+  fail-closed geri alma: bilesen yeniden uretimi reddedilince (egik eksen ->
+  "egik kiris desteklenmiyor") `rollbackOpenRecord()` aynalanan uyeleri de
+  siliyordu.
+- **Cozum:** kopya komutlarinda bilesen kopyalama fail-open:
+  `recreateComponentsOnCopies(remap, failed)` -> reddedilen instance atlanir,
+  geometri kalir, durum cubugunda Turkce uyari; komut asla geri alinmaz.
+- **GT:** `t51_mirror_coklu_secim` (35 adim) GDI + GPU yesil; `t50` yesil;
+  `t27`/`t43`/`t47` regresyon yesil.
+- **Kapi:** tam derleme + ctest **185/185**. Kontrat 1.25.0 / digest degismedi
+  -> Studio REPIN gerekmiyor.

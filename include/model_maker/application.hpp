@@ -652,11 +652,12 @@ public:
     // olurdu — aynalanan/dondurulen kopyada levha da aynalanmali; uretim parcasi
     // uye cercevesinden geldigi icin dogru geometriyi generator verir.
     // remap: kaynak model kimligi -> kopya model kimligi.
-    // Donus: basarili=true (component'suz kaynak normaldir, created=0 olabilir);
-    // basarisiz kurulumda false — cagiran rollbackOpenRecord ile TUM komutu geri
-    // alir (fail-closed).
-    bool recreateComponentsOnCopies(const std::unordered_map<EntityId, EntityId>& remap,
-                                    std::size_t* created = nullptr);
+    // Donus: yeniden uretilen instance sayisi. Uretilemeyen her instance
+    // `failed` sayacina yazilir ve ATLANIR: geometri kopyasi bozulmaz, durum
+    // cubuguna Turkce uyari cikar (fail-open). Komutun kendisi (ayna/dizi/...)
+    // asla bilesen yuzunden geri alinmaz — kullanici aynalamayi ister.
+    std::size_t recreateComponentsOnCopies(const std::unordered_map<EntityId, EntityId>& remap,
+                                           std::size_t* failed = nullptr);
     // Transform komutlarinin CEKIRDEGI: Qt/Win32 dugmesi ve GT ayni yolu kullanir.
     // Donus: uretilen kopya sayisi (0 = islem yapilmadi).
     std::size_t mirrorSelection(const Vec3& first, const Vec3& second);

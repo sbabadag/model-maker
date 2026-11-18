@@ -1367,6 +1367,38 @@ sayisini 1'e dondurur, kaydet/ac sonrasi 3 instance korunur. Regresyon:
 **Kapi:** tam derleme + tam ctest **185/185** (`/c/work/mm-logs/kopya-gate.log`).
 Kontrat degismedi (1.25.0), digest degismedi -> **Studio REPIN gerekmiyor**.
 
+---
+
+## KAPANDI — Ayna coklu secimde calismiyor (2026-11-18)
+
+**Kullanici:** "mirror coklu obje secilince aynalama yapmiyor."
+
+**Olcum (probe + yeni GT):** coklu secim + `edit.mirror` + iki tik ile
+yeniden uretildi. Ayna cekirdegi calisiyordu; kusur, bilesen yeniden uretimi
+BASARISIZ oldugunda cagiranin **tum komutu geri almasiydi** (fail-closed):
+`rebuild > mirrorSelection > recreateComponentsOnCopies` zincirinde
+`applyComponentFromParts` reddedince `rollbackOpenRecord()` aynalanan uyeleri
+de siliyordu. Kullanici hicbir sey gormuyordu ("aynalama yapmiyor").
+Reddin nedeni gercek: egik ayna ekseninde kiris kolon yuzune DIK gelmiyor
+(`egik kiris desteklenmiyor`).
+
+**Duzeltme (`src/application.cpp`):** kopya komutlarinda bilesen kopyalama
+**fail-open** oldu — `recreateComponentsOnCopies` artik `(created, failed)`
+dondurur, reddedilen instance ATLANIR, geometri korunur, durum cubuguna
+Turkce uyari yazilir ("Ayna yapildi — N bagli component kopyalanamadi
+(uretim reddi); uyeler aynalandi"). Dort yol da (ayna / dizi / ofset /
+kopyala) bu semaya gecti; komut asla bilesen yuzunden geri alinmaz.
+
+**GT:** `t51_mirror_coklu_secim` (35 adim, GDI + GPU yesil):
+(1) eksen hizali aynada coklu secim -> `models` 4->8, `componentCount` 1->2,
+`componentUniqueMembers`=2 (kopya KOPYALANAN uyelere bagli),
+`componentAttached` saglam, tek `edit.undo` 4/1'e dondurur;
+(2) egik eksende `models` 4->6, `componentCount` 1 kalir — aynalama YAPILIR.
+`t50` (kopyala/ayna/dizi/dogrusal-dizi yerlesik) hala yesil; regresyon `t27`,
+`t43`, `t47` yesil.
+
+**Kapi:** tam derleme + tam ctest **185/185** (`/c/work/mm-logs/mirror-gate.log`).
+
 ## Siradaki
 
 - **Haunch "kolon 90° donuyor"**: kullanici verisi (.mmw ya da tikla sirasi)

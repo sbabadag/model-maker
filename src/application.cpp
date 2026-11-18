@@ -8477,8 +8477,8 @@ Application::CopyStepInfo Application::copySelectionBy(const Vec3& displacement)
     return info;
 }
 
-bool Application::recreateComponentsOnCopies(
-    const std::unordered_map<EntityId, EntityId>& remap, std::size_t* createdOut) {
+std::size_t Application::recreateComponentsOnCopies(
+    const std::unordered_map<EntityId, EntityId>& remap, std::size_t* failedOut) {
     // KOPYA KOMUTLARI (ayna / dizi / ofset): kopyalanan uyelere BAGLI
     // component'ler yeni konumda YENIDEN URETILIR. Kullanici geri bildirimi
     // (2026-11-18): "ucunda component bagli obje tum kopyalama komutlariyla
@@ -8492,11 +8492,12 @@ bool Application::recreateComponentsOnCopies(
     // verir. Bu yuzden ayni tip + ayni parametrelerle YENI instance kurulur.
     // remap icinde ana/ikincil parcalarin TAMAMI varsa kurulum yapilir; yarim
     // kopyada (yalniz ana parca) instance ACILMAZ.
-    if (createdOut) *createdOut = 0;
-    if (remap.empty()) return true;
+    if (failedOut) *failedOut = 0;
+    if (remap.empty()) return 0;
 #ifdef MM_HAS_OCC
     const std::size_t instCount = document_.componentInstances().size();
     std::size_t created = 0;
+    std::size_t failed = 0;
     for (std::size_t i = 0; i < instCount; ++i) {
         const ComponentInstanceRecord rec = document_.componentInstances()[i];
         if (rec.mainPart == kInvalidEntityId) continue;
@@ -8551,15 +8552,20 @@ bool Application::recreateComponentsOnCopies(
         }
         // Cagiran ZATEN pushUndoSnapshot yapti: ayni kayda yaz (tek Undo) ve
         // basarisizlikta kaydi cagiran geri alir (fail-closed).
-        if (!applyComponentFromParts(rec.typeId, parts, params, /*shareOpenRecord=*/true))
-            return false;
+        if (!applyComponentFromParts(rec.typeId, parts, params, /*shareOpenRecord=*/true)) {
+            // Bu bilesen kopyalanamadi (or. egik ayna ekseni -> kiris kolona dik
+            // gelmiyor). KOMUT GERI ALINMAZ: kopya geometri kalir, bilesen
+            // atlanir ve neden durum cubuguna yazilir (sessiz kayip yok).
+            ++failed;
+            continue;
+        }
         ++created;
     }
-    if (createdOut) *createdOut = created;
-    return true;
+    if (failedOut) *failedOut = failed;
+    return created;
 #else
-    (void)createdOut;
-    return true;
+    (void)failedOut;
+    return 0;
 #endif
 }
 
@@ -8589,11 +8595,14 @@ std::size_t Application::mirrorSelection(const Vec3& first, const Vec3& second) 
         rebuildCutBaseSolid(copyId);
 #endif
     }
-    if (!recreateComponentsOnCopies(remap)) {
-        document_.rollbackOpenRecord();   // fail-closed: yarim kopya kalmaz
-        publishStatus(L"Ayna: bagli component yeniden uretilemedi — islem geri alindi");
-        return 0;
-    }
+    std::size_t skipped = 0;
+    const std::size_t recreated = recreateComponentsOnCopies(remap, &skipped);
+    if (skipped > 0)
+        publishStatus(L"Ayna yapildi — " + std::to_wstring(skipped) +
+                      L" bagli component kopyalanamadi (uretim reddi); uyeler aynalandi");
+    else if (recreated > 0)
+        publishStatus(L"Ayna yapildi — " + std::to_wstring(recreated) +
+                      L" bagli component yeni konumda yeniden uretildi");
     updateHover(cursorScreen_.x, cursorScreen_.y);
     updateControls();
     updateStatus();
@@ -8626,6 +8635,7 @@ std::size_t Application::arraySelection(std::size_t count, const Vec3& deltaOrCe
     if (generated.empty() || items == 0) return 0;
     pushUndoSnapshot();
     std::size_t added = 0;
+    std::size_t skippedTotal = 0;
     for (std::size_t j = 0; j < items; ++j) {
         std::unordered_map<EntityId, EntityId> one;
         for (std::size_t s = 0; s < generated.size(); ++s) {
@@ -8639,12 +8649,13 @@ std::size_t Application::arraySelection(std::size_t count, const Vec3& deltaOrCe
             ++added;
         }
         if (one.empty()) continue;
-        if (!recreateComponentsOnCopies(one)) {
-            document_.rollbackOpenRecord();   // fail-closed: yarim dizi kalmaz
-            publishStatus(L"Dizi: bagli component yeniden uretilemedi — islem geri alindi");
-            return 0;
-        }
+        std::size_t skipped = 0;
+        (void)recreateComponentsOnCopies(one, &skipped);
+        skippedTotal += skipped;
     }
+    if (skippedTotal > 0)
+        publishStatus(L"Dizi olusturuldu — " + std::to_wstring(skippedTotal) +
+                      L" bagli component kopyalanamadi (uretim reddi); uyeler dizildi");
     updateHover(cursorScreen_.x, cursorScreen_.y);
     updateControls();
     updateStatus();
@@ -8668,11 +8679,10 @@ std::size_t Application::offsetSelection(double distance, const Vec3& point) {
     rebuildCutBaseSolid(copyId);
 #endif
     const std::unordered_map<EntityId, EntityId> remap{{src, copyId}};
-    if (!recreateComponentsOnCopies(remap)) {
-        document_.rollbackOpenRecord();
-        publishStatus(L"Ofset: bagli component yeniden uretilemedi — islem geri alindi");
-        return 0;
-    }
+    std::size_t skipped = 0;
+    (void)recreateComponentsOnCopies(remap, &skipped);
+    if (skipped > 0)
+        publishStatus(L"Ofset olusturuldu — bagli component kopyalanamadi (uretim reddi)");
     updateHover(cursorScreen_.x, cursorScreen_.y);
     updateControls();
     updateStatus();
@@ -8705,15 +8715,14 @@ std::size_t Application::copyModelsAndRecompute(const std::vector<std::size_t>& 
         std::unordered_map<EntityId, EntityId> remap;
         for (std::size_t k = 0; k < copied && k < indices.size(); ++k)
             remap[document_.modelId(indices[k])] = document_.modelId(before + k);
-        if (!recreateComponentsOnCopies(remap)) {
-            document_.rollbackOpenRecord();   // fail-closed: yarim kopya kalmaz
-            publishStatus(L"Kopyala: bagli component yeniden uretilemedi — islem geri alindi");
-            updateHover(cursorScreen_.x, cursorScreen_.y);
-            updateControls();
-            updateStatus();
-            invalidateCanvas();
-            return 0;
-        }
+        std::size_t skipped = 0;
+        const std::size_t recreated = recreateComponentsOnCopies(remap, &skipped);
+        if (skipped > 0)
+            publishStatus(L"Kopyalandi — " + std::to_wstring(skipped) +
+                          L" bagli component kopyalanamadi (uretim reddi)");
+        else if (recreated > 0)
+            publishStatus(L"Kopyalandi — " + std::to_wstring(recreated) +
+                          L" bagli component yeni konumda yeniden uretildi");
     }
 #ifdef MM_HAS_OCC
     for (std::size_t ci = cutsBefore; ci < document_.cutModifiers().size(); ++ci)
