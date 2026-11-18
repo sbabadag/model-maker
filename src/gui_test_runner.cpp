@@ -56,6 +56,7 @@
 #include <cstdio>
 
 #include <algorithm>
+#include <set>
 #include <cmath>
 
 namespace mm {
@@ -1053,6 +1054,35 @@ struct Runner {
             if (n != spec[QStringLiteral("count")].toInt(-1))
                 problems << QStringLiteral("componentCount[%1]=%2 (beklenen %3)")
                                 .arg(typeId).arg(n).arg(spec[QStringLiteral("count")].toInt(-1));
+        }
+        // KOPYA komutlari (2026-11-18): kopyalanan component'ler KOPYALANAN
+        // uyelere bagli OLMALI. Ayni (ana, ikincil) uye ciftini paylasan iki
+        // instance = kopya orijinale baglanmis demektir (levhalar eski yerde
+        // kalir). Ayrica instance sayisi beklenenle esit olmali.
+        if (expect.contains(QStringLiteral("componentUniqueMembers"))) {
+            const QJsonObject spec = expect[QStringLiteral("componentUniqueMembers")].toObject();
+            const QString typeId = spec[QStringLiteral("typeId")].toString();
+            const int want = spec[QStringLiteral("count")].toInt(-1);
+            std::set<std::pair<unsigned long long, std::vector<unsigned long long>>> seen;
+            int n = 0;
+            bool dup = false;
+            for (const ComponentInstanceRecord& r : app.document().componentInstances()) {
+                if (QString::fromStdWString(r.typeId) != typeId) continue;
+                ++n;
+                std::vector<unsigned long long> sec;
+                for (const EntityId id : r.secondaryParts)
+                    sec.push_back(static_cast<unsigned long long>(id));
+                std::sort(sec.begin(), sec.end());
+                if (!seen.insert({static_cast<unsigned long long>(r.mainPart), sec}).second)
+                    dup = true;
+            }
+            if (n != want)
+                problems << QStringLiteral("componentUniqueMembers[%1]: %2 instance (beklenen %3)")
+                                .arg(typeId).arg(n).arg(want);
+            if (dup)
+                problems << QStringLiteral("componentUniqueMembers[%1]: ayni uye ciftini "
+                                           "paylasan instance var (kopya orijinale bagli)")
+                                .arg(typeId);
         }
         // H-8: BAGLILIK — main/secondary uye eksen uclari arasindaki EN KISA
         // mesafe maxGap'i asmamali ("kolon mertekten ayrik" regresyonunu
@@ -2349,6 +2379,70 @@ struct Runner {
             }
             pump(80);
             return writeStep(step, QStringLiteral("appPaper"));
+        }
+        if (step.contains(QStringLiteral("appMirror"))) {
+            // KOPYA KOMUTLARI (kullanici 2026-11-18): "ucunda component bagli
+            // obje tum kopyalama komutlariyla beraber kopyalanmasi lazim".
+            // Ayna cekirdegi (Application::mirrorSelection) dogrudan kosulur:
+            // modal diyalog yok, uc noktasi dunya koordinatindan verilir.
+            const QJsonObject spec = step[QStringLiteral("appMirror")].toObject();
+            const auto vec = [&](const char* k, auto& out) {
+                const QJsonArray a = spec[QString::fromLatin1(k)].toArray();
+                if (a.size() < 3) return false;
+                out = mm::Vec3{a[0].toDouble(), a[1].toDouble(), a[2].toDouble()};
+                return true;
+            };
+            mm::Vec3 p1{}, p2{};
+            if (!vec("p1", p1) || !vec("p2", p2))
+                return fail(QStringLiteral("appMirror: 'p1' ve 'p2' (3'lu) bekleniyor"));
+            std::vector<std::size_t> indices;
+            for (const auto v : spec[QStringLiteral("indices")].toArray())
+                indices.push_back(static_cast<std::size_t>(v.toInt(-1)));
+            if (!indices.empty()) window.application().selectModels(indices);
+            if (window.application().mirrorSelection(p1, p2) == 0)
+                return fail(QStringLiteral("appMirror: kopya uretilemedi"));
+            pump(160);
+            return writeStep(step, QStringLiteral("appMirror"));
+        }
+        if (step.contains(QStringLiteral("appArray"))) {
+            // Dogrusal/dairesel dizi: sayi diyalogu (modal) YERINE cekirdek
+            // dogrudan kosulur. {indices, count, delta|center, polar:bool}
+            const QJsonObject spec = step[QStringLiteral("appArray")].toObject();
+            const bool polar = spec[QStringLiteral("polar")].toBool(false);
+            const int count = spec[QStringLiteral("count")].toInt(0);
+            if (count < 2) return fail(QStringLiteral("appArray: 'count' >= 2 olmali"));
+            const QJsonArray a = spec[polar ? QStringLiteral("center")
+                                            : QStringLiteral("delta")].toArray();
+            if (a.size() < 3)
+                return fail(QStringLiteral("appArray: 3'lu 'delta' (ya da 'center') bekleniyor"));
+            std::vector<std::size_t> indices;
+            for (const auto v : spec[QStringLiteral("indices")].toArray())
+                indices.push_back(static_cast<std::size_t>(v.toInt(-1)));
+            if (!indices.empty()) window.application().selectModels(indices);
+            if (window.application().arraySelection(
+                    static_cast<std::size_t>(count),
+                    mm::Vec3{a[0].toDouble(), a[1].toDouble(), a[2].toDouble()},
+                    polar) == 0)
+                return fail(QStringLiteral("appArray: kopya uretilemedi"));
+            pump(200);
+            return writeStep(step, QStringLiteral("appArray"));
+        }
+        if (step.contains(QStringLiteral("appOffset"))) {
+            // Ofset: {indices, distance, point:[x,y,z]}
+            const QJsonObject spec = step[QStringLiteral("appOffset")].toObject();
+            const double distance = spec[QStringLiteral("distance")].toDouble(0.0);
+            const QJsonArray a = spec[QStringLiteral("point")].toArray();
+            if (distance <= 0.0 || a.size() < 3)
+                return fail(QStringLiteral("appOffset: 'distance' ve 3'lu 'point' bekleniyor"));
+            std::vector<std::size_t> indices;
+            for (const auto v : spec[QStringLiteral("indices")].toArray())
+                indices.push_back(static_cast<std::size_t>(v.toInt(-1)));
+            if (!indices.empty()) window.application().selectModels(indices);
+            if (window.application().offsetSelection(
+                    distance, mm::Vec3{a[0].toDouble(), a[1].toDouble(), a[2].toDouble()}) == 0)
+                return fail(QStringLiteral("appOffset: kopya uretilemedi"));
+            pump(160);
+            return writeStep(step, QStringLiteral("appOffset"));
         }
         if (step.contains(QStringLiteral("appCopyModels"))) {
             // P-2/3: secili modelleri kopyala (kopya YENI kimlik + yeni konum).

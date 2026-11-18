@@ -5370,9 +5370,10 @@ std::optional<mm::ComponentInput> Application::componentInputForParts(
 #endif
 }
 
-void Application::applyComponentFromParts(const std::wstring& typeId,
+bool Application::applyComponentFromParts(const std::wstring& typeId,
                                           const std::vector<std::size_t>& parts,
-                                          const std::vector<CompParam>& params) {
+                                          const std::vector<CompParam>& params,
+                                          bool shareOpenRecord) {
     // GENERIC uretim (C7): herhangi bir registry tipi icin ortak yol. Fin Plate
     // ile AYNI zincir: registry.generate -> componentPlan -> materializer.
     const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(typeId);
@@ -5382,7 +5383,7 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     if (parts.size() != static_cast<std::size_t>(pickCount)) {
         componentCommandWarn(*this, display + L": tam " + std::to_wstring(pickCount) +
                              L" parca secin (su an " + std::to_wstring(parts.size()) + L" secili)");
-        return;
+        return false;
     }
     std::size_t mainIdx = parts[0];
     for (const std::size_t p : parts) {
@@ -5390,11 +5391,11 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
             componentCommandWarn(*this, display + L": parca indeksi gecersiz (" +
                                  std::to_wstring(p) + L" >= " +
                                  std::to_wstring(document_.models().size()) + L")");
-            return;
+            return false;
         }
         if (document_.models()[p].constructionKind() != ConstructionKind::None) {
             componentCommandWarn(*this, display + L": parcalar normal model olmali (konstruksiyon degil)");
-            return;
+            return false;
         }
     }
 
@@ -5423,7 +5424,7 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
                          L"kiriş=secondary (seçim sırası tersti)");
     } else if (roles.checked && !roles.determinable) {
         componentCommandWarn(*this, display + L" uygulanmadi: " + roles.reason);
-        return;
+        return false;
     }
 
     // H-10: CAP LEVHASI BOSLUGU (topPlateGap) KOLON BOYUNU DEGISTIRIR.
@@ -5441,14 +5442,18 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     {
         const double capGap = mm::paramAsDouble(effParams, L"topPlateGap", 0.0);
         if (std::abs(capGap) > 1e-9) {
-            pushUndoSnapshot();
-            ownsRecord = true;
+            // Kopya/dizi/ayna komutu ZATEN acik kayit actiysa IKINCI snapshot
+            // acmayiz (tek Undo); kaydi geri alma sorumlulugu cagirandadir.
+            if (!shareOpenRecord) {
+                pushUndoSnapshot();
+                ownsRecord = true;
+            }
             columnShifted = shiftColumnTopNoUndo(document_.modelId(mainIdx), capGap);
             if (!columnShifted) {
                 // Dikey olmayan ana parca / uretilemeyen kati: bosluk uygulanamaz,
                 // baglanti yine kurulur (levha kolon tepesine oturur). Sessiz
                 // gecis yok — durum cubuguna yazilir.
-                document_.rollbackOpenRecord();
+                if (ownsRecord) document_.rollbackOpenRecord();
                 ownsRecord = false;
                 publishStatus(display + L": cap levhasi boslugu uygulanamadi "
                               L"(ana parca dikey profilli degil); levha kolon "
@@ -5470,13 +5475,13 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     if (!mm::memberGeometryUsable(input.main)) {
         if (ownsRecord) document_.rollbackOpenRecord();
         componentCommandWarn(*this, display + L": ana parcanin ekseni/kestiti gecersiz (sifir uzunluk veya eksik kesit)");
-        return;
+        return false;
     }
     for (const auto& s : input.secondary) {
         if (!mm::memberGeometryUsable(s)) {
             if (ownsRecord) document_.rollbackOpenRecord();
             componentCommandWarn(*this, display + L": ikincil parcanin ekseni/kestiti gecersiz (sifir uzunluk veya eksik kesit)");
-            return;
+            return false;
         }
     }
     // TEMAS DENETIMI (H-9, fail-closed): uyeler 3B'de birbirine degmiyorsa
@@ -5488,7 +5493,7 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     if (contact.checked && !contact.inContact) {
         if (ownsRecord) document_.rollbackOpenRecord();
         componentCommandWarn(*this, display + L" uygulanmadi: " + contact.message);
-        return;
+        return false;
     }
     // New Haunch40 instances must persist complete editable defaults at the
     // first commit, not only once the Properties panel is opened.
@@ -5515,7 +5520,7 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
         if (hasFailingCheck && componentRejectDialogRequest_) {
             componentRejectDialogRequest_(typeId, parts, params);
         }
-        return;
+        return false;
     }
 
     // 3. GenerationPlan -> roleKey koruyan ComponentPlan.
@@ -5523,7 +5528,7 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     if (!plan.ok) {
         if (ownsRecord) document_.rollbackOpenRecord();
         componentCommandWarn(*this, display + L" plani olusturulamadi: " + plan.error);
-        return;
+        return false;
     }
 
     // 4. Ortak materializer: prepare (pure) + commit (tek undo kaydi).
@@ -5533,7 +5538,7 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     if (!prep.ok) {
         if (ownsRecord) document_.rollbackOpenRecord();
         componentCommandWarn(*this, display + L" hazirlanamadi: " + prep.error);
-        return;
+        return false;
     }
     mm::ComponentInstanceRecord rec;
     rec.typeId = typeId;
@@ -5546,11 +5551,11 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     rec.params = input.params;
     // H-10: kolon kaydirildiysa undo kaydi ZATEN acik — commit ayni kayda yazar.
     const mm::ComponentMaterializer::CommitResult res =
-        mat.commit(prep, rec, /*openOwnRecord=*/!ownsRecord);
+        mat.commit(prep, rec, /*openOwnRecord=*/!ownsRecord && !shareOpenRecord);
     if (!res.ok) {
         if (ownsRecord) document_.rollbackOpenRecord();
         componentCommandWarn(*this, display + L" uygulanamadi: " + res.error);
-        return;
+        return false;
     }
     if (columnShifted) {
         appendStartupLog(L"[H-10] cap levhasi boslugu: kolon ust ucu " +
@@ -5601,6 +5606,7 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     updateControls();
     updateStatus();
     invalidateCanvas();
+    return true;
 }
 
 void Application::applyFinPlateFromParts(const std::vector<std::size_t>& parts) {
@@ -8471,6 +8477,209 @@ Application::CopyStepInfo Application::copySelectionBy(const Vec3& displacement)
     return info;
 }
 
+bool Application::recreateComponentsOnCopies(
+    const std::unordered_map<EntityId, EntityId>& remap, std::size_t* createdOut) {
+    // KOPYA KOMUTLARI (ayna / dizi / ofset): kopyalanan uyelere BAGLI
+    // component'ler yeni konumda YENIDEN URETILIR. Kullanici geri bildirimi
+    // (2026-11-18): "ucunda component bagli obje tum kopyalama komutlariyla
+    // beraber kopyalanmasi lazim — objeler kopyalaniyor ama component
+    // kopyalanmiyor". Olculdu: `edit.copy`/`appCopyModels` zaten klonluyor
+    // (copyModels -> cloneDependentsForCopies), fakat ayna/dizi/ofset yollari
+    // `addModel` ile ham geometri kopyasi uretiyordu -> component yok.
+    //
+    // Levhalari KOPYALAMAYIZ: aynalanan/dondurulen kopyada levha da aynalanmali;
+    // levha geometrisi uye cercevesinden uretildigi icin dogru sonucu generator
+    // verir. Bu yuzden ayni tip + ayni parametrelerle YENI instance kurulur.
+    // remap icinde ana/ikincil parcalarin TAMAMI varsa kurulum yapilir; yarim
+    // kopyada (yalniz ana parca) instance ACILMAZ.
+    if (createdOut) *createdOut = 0;
+    if (remap.empty()) return true;
+#ifdef MM_HAS_OCC
+    const std::size_t instCount = document_.componentInstances().size();
+    std::size_t created = 0;
+    for (std::size_t i = 0; i < instCount; ++i) {
+        const ComponentInstanceRecord rec = document_.componentInstances()[i];
+        if (rec.mainPart == kInvalidEntityId) continue;
+        const auto mainHit = remap.find(rec.mainPart);
+        if (mainHit == remap.end()) continue;
+        std::vector<EntityId> secIds;
+        bool complete = true;
+        for (const EntityId id : rec.secondaryParts) {
+            const auto hit = remap.find(id);
+            if (hit == remap.end()) { complete = false; break; }
+            secIds.push_back(hit->second);
+        }
+        if (!complete || secIds.empty()) continue;
+        const auto mainIdx = document_.indexOfEntity(mainHit->second);
+        if (!mainIdx) continue;
+        std::vector<std::size_t> parts{*mainIdx};
+        bool partsOk = true;
+        for (const EntityId id : secIds) {
+            const auto idx = document_.indexOfEntity(id);
+            if (!idx) { partsOk = false; break; }
+            parts.push_back(*idx);
+        }
+        if (!partsOk) continue;
+        // Document ZATEN klonladi mi? copyModels yolu, sahip olunan TUM canli
+        // cocuklar (levha/bulon/child) kopyalandiysa instance'i kendisi klonlar
+        // (kullanicinin duzenledigi levha geometrisi korunur). O durumda ikinci
+        // kez instance ACMAYIZ — cift kayit olurdu.
+        {
+            bool anyOwned = false, allOwnedCopied = true;
+            const auto ownCheck = [&](EntityId id, bool live) {
+                if (id == kInvalidEntityId || !live) return;
+                anyOwned = true;
+                if (!remap.count(id)) allOwnedCopied = false;
+            };
+            for (const EntityId id : rec.ownedPlateIds)
+                ownCheck(id, document_.indexOfEntity(id).has_value());
+            for (const EntityId id : rec.ownedBoltGroupIds)
+                ownCheck(id, document_.indexOfBoltGroup(id).has_value());
+            for (const ComponentChildRecord& c : rec.children)
+                ownCheck(c.entityId, document_.indexOfEntity(c.entityId).has_value() ||
+                                         document_.indexOfBoltGroup(c.entityId).has_value());
+            if (anyOwned && allOwnedCopied) continue;
+        }
+        // Parametrelerdeki EntityId referanslari da kopyaya cevrilir (ayni
+        // esleme; yok ise orijinalde kalir).
+        std::vector<CompParam> params = rec.params;
+        for (CompParam& p : params) {
+            if (auto* e = std::get_if<EntityId>(&p.value)) {
+                const auto hit = remap.find(*e);
+                if (hit != remap.end()) *e = hit->second;
+            }
+        }
+        // Cagiran ZATEN pushUndoSnapshot yapti: ayni kayda yaz (tek Undo) ve
+        // basarisizlikta kaydi cagiran geri alir (fail-closed).
+        if (!applyComponentFromParts(rec.typeId, parts, params, /*shareOpenRecord=*/true))
+            return false;
+        ++created;
+    }
+    if (createdOut) *createdOut = created;
+    return true;
+#else
+    (void)createdOut;
+    return true;
+#endif
+}
+
+std::size_t Application::mirrorSelection(const Vec3& first, const Vec3& second) {
+    std::vector<WireframeModel> copies;
+    std::vector<EntityId> sources;
+    copies.reserve(selectedModels_.size());
+    sources.reserve(selectedModels_.size());
+    for (const auto index : selectedModels_) {
+        if (index >= document_.models().size()) continue;
+        const auto model = mode_ == EditMode::View3D
+            ? mirrorModelOnPlane(document_.models()[index], first, second, workPlane_)
+            : mirrorModel2D(document_.models()[index], first, second);
+        if (!model) return 0;   // kismi uretim yok
+        sources.push_back(document_.modelId(index));
+        copies.push_back(std::move(*model));
+    }
+    if (copies.empty()) return 0;
+    pushUndoSnapshot();
+    std::unordered_map<EntityId, EntityId> remap;
+    for (std::size_t k = 0; k < copies.size(); ++k) {
+        document_.addModel(std::move(copies[k]));
+        const EntityId copyId = document_.modelId(document_.models().size() - 1);
+        remap[sources[k]] = copyId;
+#ifdef MM_HAS_OCC
+        // Katı taban ONCE: component bulon deligini Boolean ile acar.
+        rebuildCutBaseSolid(copyId);
+#endif
+    }
+    if (!recreateComponentsOnCopies(remap)) {
+        document_.rollbackOpenRecord();   // fail-closed: yarim kopya kalmaz
+        publishStatus(L"Ayna: bagli component yeniden uretilemedi — islem geri alindi");
+        return 0;
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return copies.size();
+}
+
+std::size_t Application::arraySelection(std::size_t count, const Vec3& deltaOrCenter,
+                                        bool polar) {
+    if (count < 2 || count > 1000) return 0;
+    // Her kaynak uye icin uretilen kopyalar ITEM SIRASINI KORUR (item j = j.
+    // dizi elemani). Component kurulumu ITEM BAZINDA yapilir: ayni item'in
+    // kolon+kiris kopyalari ayni esleme haritasinda olmali, yoksa yarim kopya
+    // gorunur ve instance acilmaz.
+    std::vector<std::vector<WireframeModel>> generated;
+    std::vector<EntityId> sources;
+    std::size_t items = 0;
+    for (const auto index : selectedModels_) {
+        if (index >= document_.models().size()) continue;
+        auto copiesFor = polar
+            ? (mode_ == EditMode::View3D
+                   ? polarArrayOnPlane(document_.models()[index], count, deltaOrCenter, workPlane_)
+                   : polarArray2D(document_.models()[index], count, deltaOrCenter))
+            : linearArray2D(document_.models()[index], count, deltaOrCenter);
+        if (copiesFor.empty()) continue;
+        items = std::max(items, copiesFor.size());
+        generated.push_back(std::move(copiesFor));
+        sources.push_back(document_.modelId(index));
+    }
+    if (generated.empty() || items == 0) return 0;
+    pushUndoSnapshot();
+    std::size_t added = 0;
+    for (std::size_t j = 0; j < items; ++j) {
+        std::unordered_map<EntityId, EntityId> one;
+        for (std::size_t s = 0; s < generated.size(); ++s) {
+            if (j >= generated[s].size()) continue;
+            document_.addModel(std::move(generated[s][j]));
+            const EntityId copyId = document_.modelId(document_.models().size() - 1);
+            one[sources[s]] = copyId;
+#ifdef MM_HAS_OCC
+            rebuildCutBaseSolid(copyId);
+#endif
+            ++added;
+        }
+        if (one.empty()) continue;
+        if (!recreateComponentsOnCopies(one)) {
+            document_.rollbackOpenRecord();   // fail-closed: yarim dizi kalmaz
+            publishStatus(L"Dizi: bagli component yeniden uretilemedi — islem geri alindi");
+            return 0;
+        }
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return added;
+}
+
+std::size_t Application::offsetSelection(double distance, const Vec3& point) {
+    if (selectedModels_.size() != 1) return 0;
+    const std::size_t index = selectedModels_.front();
+    if (index >= document_.models().size()) return 0;
+    const auto offset = mode_ == EditMode::View3D
+        ? offsetModelOnPlane(document_.models()[index], distance, point, workPlane_)
+        : offsetModel2D(document_.models()[index], distance, point);
+    if (!offset) return 0;
+    const EntityId src = document_.modelId(index);
+    pushUndoSnapshot();
+    document_.addModel(*offset);
+    const EntityId copyId = document_.modelId(document_.models().size() - 1);
+#ifdef MM_HAS_OCC
+    rebuildCutBaseSolid(copyId);
+#endif
+    const std::unordered_map<EntityId, EntityId> remap{{src, copyId}};
+    if (!recreateComponentsOnCopies(remap)) {
+        document_.rollbackOpenRecord();
+        publishStatus(L"Ofset: bagli component yeniden uretilemedi — islem geri alindi");
+        return 0;
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return 1;
+}
+
 std::size_t Application::copyModelsAndRecompute(const std::vector<std::size_t>& indices,
                                                const Vec3& displacement) {
     // GT-1 (P-2/3): kullanici "Kopyala" akisinin AYNI cekirdegi.
@@ -8483,8 +8692,30 @@ std::size_t Application::copyModelsAndRecompute(const std::vector<std::size_t>& 
     document_.copyModels(indices, displacement);
     const std::size_t copied = document_.models().size() - before;
 #ifdef MM_HAS_OCC
+    // KATI TABANI ONCE kurulur: component uretimi bulon deliklerini Boolean ile
+    // acar (applyCutsFor); taban yoksa "bulon deligi uygulanamadi" ile reddedilir.
     for (std::size_t k = before; k < document_.models().size(); ++k)
         rebuildCutBaseSolid(document_.modelId(k));
+#endif
+    // KOPYA + COMPONENT (kullanici 2026-11-18): document_.copyModels yalnizca
+    // secili geometriyi kopyalar; secimde bilesenin levhalari YOKSA instance
+    // klonlanmaz (yarim kopya). Bu durumda bagli component kopyalanan uyeler
+    // uzerinde YENIDEN URETILIR — ayna/dizi ile ayni yol.
+    {
+        std::unordered_map<EntityId, EntityId> remap;
+        for (std::size_t k = 0; k < copied && k < indices.size(); ++k)
+            remap[document_.modelId(indices[k])] = document_.modelId(before + k);
+        if (!recreateComponentsOnCopies(remap)) {
+            document_.rollbackOpenRecord();   // fail-closed: yarim kopya kalmaz
+            publishStatus(L"Kopyala: bagli component yeniden uretilemedi — islem geri alindi");
+            updateHover(cursorScreen_.x, cursorScreen_.y);
+            updateControls();
+            updateStatus();
+            invalidateCanvas();
+            return 0;
+        }
+    }
+#ifdef MM_HAS_OCC
     for (std::size_t ci = cutsBefore; ci < document_.cutModifiers().size(); ++ci)
         recomputeCutTarget(document_.cutModifiers()[ci].target);
 #endif
@@ -8541,17 +8772,8 @@ void Application::commitTransformPoint(const Vec3& point) {
     if (transformCommand_ == TransformCommand::Offset) {
         if (transformPhase_ != TransformPhase::Destination || !offsetDistance_ ||
             selectedModels_.size() != 1 || selectedModels_.front() >= document_.models().size()) return;
-        const auto offset = mode_ == EditMode::View3D
-            ? offsetModelOnPlane(document_.models()[selectedModels_.front()],
-                                 *offsetDistance_, point, workPlane_)
-            : offsetModel2D(document_.models()[selectedModels_.front()], *offsetDistance_, point);
-        if (offset) {
-            pushUndoSnapshot();
-            document_.addModel(*offset);
-            cancelTransformCommand();
-        } else {
-            MessageBeep(MB_ICONWARNING);
-        }
+        if (offsetSelection(*offsetDistance_, point) > 0) cancelTransformCommand();
+        else MessageBeep(MB_ICONWARNING);
         return;
     }
     if (transformCommand_ == TransformCommand::PolarArray) {
@@ -8559,17 +8781,10 @@ void Application::commitTransformPoint(const Vec3& point) {
             MessageBeep(MB_ICONWARNING);
             return;
         }
-        std::vector<WireframeModel> copies;
-        for (const auto index : selectedModels_) {
-            if (index >= document_.models().size()) continue;
-            auto generated = mode_ == EditMode::View3D
-                ? polarArrayOnPlane(document_.models()[index], *arrayItemCount_, point, workPlane_)
-                : polarArray2D(document_.models()[index], *arrayItemCount_, point);
-            copies.insert(copies.end(), std::make_move_iterator(generated.begin()),
-                          std::make_move_iterator(generated.end()));
+        if (arraySelection(*arrayItemCount_, point, /*polar=*/true) == 0) {
+            MessageBeep(MB_ICONWARNING);
+            return;
         }
-        pushUndoSnapshot();
-        for (auto& model : copies) document_.addModel(std::move(model));
         cancelTransformCommand();
         return;
     }
@@ -8585,21 +8800,10 @@ void Application::commitTransformPoint(const Vec3& point) {
     }
     if (transformPhase_ != TransformPhase::Destination || !transformBase_) return;
     if (transformCommand_ == TransformCommand::Mirror) {
-        std::vector<WireframeModel> mirrored;
-        mirrored.reserve(selectedModels_.size());
-        for (const auto index : selectedModels_) {
-            if (index >= document_.models().size()) continue;
-            const auto model = mode_ == EditMode::View3D
-                ? mirrorModelOnPlane(document_.models()[index], *transformBase_, point, workPlane_)
-                : mirrorModel2D(document_.models()[index], *transformBase_, point);
-            if (!model) {
-                MessageBeep(MB_ICONWARNING);
-                return;
-            }
-            mirrored.push_back(std::move(*model));
+        if (mirrorSelection(*transformBase_, point) == 0) {
+            MessageBeep(MB_ICONWARNING);
+            return;
         }
-        pushUndoSnapshot();
-        for (auto& model : mirrored) document_.addModel(std::move(model));
         cancelTransformCommand();
         return;
     }
@@ -8620,19 +8824,10 @@ void Application::commitTransformPoint(const Vec3& point) {
         return;
     }
     if (transformCommand_ == TransformCommand::LinearArray) {
-        std::vector<WireframeModel> copies;
-        for (const auto index : selectedModels_) {
-            if (index >= document_.models().size()) continue;
-            auto generated = linearArray2D(document_.models()[index], *arrayItemCount_, displacement);
-            copies.insert(copies.end(), std::make_move_iterator(generated.begin()),
-                          std::make_move_iterator(generated.end()));
-        }
-        if (copies.empty()) {
+        if (arraySelection(*arrayItemCount_, displacement, /*polar=*/false) == 0) {
             MessageBeep(MB_ICONWARNING);
             return;
         }
-        pushUndoSnapshot();
-        for (auto& model : copies) document_.addModel(std::move(model));
         cancelTransformCommand();
         return;
     }

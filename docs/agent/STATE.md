@@ -864,3 +864,20 @@ sürerken yalnız `docs/` düzenlenir.
 - **Kapi:** tam derleme + tam ctest **185/185**. GT suiti 50 senaryo; paralel elle
   kosum yuzunden 2 kirmizi (h4, t41) tek basina tekrar kosuldu -> yesil.
 - Kontrat degismedi (1.25.0), digest degismedi -> **Studio REPIN gerekmiyor**.
+
+## 2026-11-18 — Kopya komutlari bileseni de kopyalar (t50)
+
+- **Kusur:** ucu bilesenli uyeler kopyalaninca bilesen kopyalanmiyordu.
+  `edit.copy` yolunda yarim secim (yalniz uyeler) instance klonlamiyordu; ayna /
+  dizi / ofset yollari ham geometri kopyasi uretiyordu.
+- **Cozum:** `Application::recreateComponentsOnCopies` — kopyalanan uyelere
+  bagli instance ayni tip + parametrelerle YENIDEN URETILIR (ayna/donus
+  geometrisini generator verir); cocuklar da kopyalandiysa Document'un kendi
+  klonu korunur (cift kayit yok). Dort kopya yolu bu cekirdege baglandi.
+- **Tek Undo + fail-closed:** `applyComponentFromParts(shareOpenRecord=true)`;
+  hata halinde `rollbackOpenRecord()` ile tum komut geri alinir.
+- **GT:** `t50_kopya_component` (39 adim) once KIRMIZI (`componentCount=1`),
+  sonra GDI + GPU **yesil**; yeni `expect.componentUniqueMembers` kopyanin
+  orijinal uyelere baglanmasini yakalar. `t27`, `t43`, `t47` regresyon yesil.
+- **Kapi:** tam derleme + ctest **185/185**. Kontrat 1.25.0 / digest degismedi ->
+  **Studio REPIN gerekmiyor**.

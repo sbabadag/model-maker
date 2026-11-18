@@ -640,9 +640,28 @@ public:
     bool componentCommandActive() const { return !pendingComponentType_.empty(); }
     // Generic uretim: registry.generate(typeId) -> plan -> materializer (tek undo).
     // params = component'e ait tipli parametreler (bos = registry varsayilani).
-    void applyComponentFromParts(const std::wstring& typeId,
+    // shareOpenRecord: cagiran ZATEN acik bir undo kaydi actiysa (kopya/dizi/ayna
+    // komutu) true verilir — materializer kendi kaydini ACMAZ, ayni adima yazar
+    // (tek Undo). Basarisizlikta kaydi cagiran geri alir.
+    bool applyComponentFromParts(const std::wstring& typeId,
                                  const std::vector<std::size_t>& parts,
-                                 const std::vector<CompParam>& params);
+                                 const std::vector<CompParam>& params,
+                                 bool shareOpenRecord = false);
+    // KOPYA KOMUTLARI (ayna / dizi / ofset / gorsel gumball): kopyalanan uyelere
+    // BAGLI component'ler yeni konumda YENIDEN URETILIR. Levha kopyalamak yanlis
+    // olurdu — aynalanan/dondurulen kopyada levha da aynalanmali; uretim parcasi
+    // uye cercevesinden geldigi icin dogru geometriyi generator verir.
+    // remap: kaynak model kimligi -> kopya model kimligi.
+    // Donus: basarili=true (component'suz kaynak normaldir, created=0 olabilir);
+    // basarisiz kurulumda false — cagiran rollbackOpenRecord ile TUM komutu geri
+    // alir (fail-closed).
+    bool recreateComponentsOnCopies(const std::unordered_map<EntityId, EntityId>& remap,
+                                    std::size_t* created = nullptr);
+    // Transform komutlarinin CEKIRDEGI: Qt/Win32 dugmesi ve GT ayni yolu kullanir.
+    // Donus: uretilen kopya sayisi (0 = islem yapilmadi).
+    std::size_t mirrorSelection(const Vec3& first, const Vec3& second);
+    std::size_t arraySelection(std::size_t count, const Vec3& deltaOrCenter, bool polar);
+    std::size_t offsetSelection(double distance, const Vec3& point);
     // MM-7 item 2: Generic uretim plani CHECK ihlaliyle reddedildiginde (yani
     // parametreyle duzeltilebilir fail-closed) Qt katmanina diyalog acma istegi
     // iletir. Atanmazsa eski davranis (yalniz uyari) korunur. QtMainWindow bu

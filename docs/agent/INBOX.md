@@ -1322,6 +1322,51 @@ bayragini ETKILEMEZ. Once KIRMIZI kosuldu (`gt-t49-kirmizi.log`: adim 2,
 
 ---
 
+---
+
+## KAPANDI — Kopya komutlari bileseni de kopyalar (2026-11-18)
+
+**Kullanici:** "Ucunda component bagli obje tum kopyalama komutlariyla beraber
+kopyalanmasi lazim; su an objeler kopyalaniyor ama component kopyalanmiyor."
+
+**Olcum (kirmizi GT once):** `t50_kopya_component` yazildi ve eski davranista
+kirmizi alindi — uyeler kopyalandiktan sonra `componentCount` **1** kaliyordu
+(beklenen 2). Kok neden: `edit.copy` yolunda (`Document::copyModels` ->
+`cloneDependentsForCopies`) instance yalnizca bilesenin **TUM** levha/bulon
+nesneleri de secimdeyse klonlanir; secim yalniz uyeler oldugunda yarim kopya
+kurali geregi instance acilmaz. Ayna / dogrusal-dairesel dizi / ofset yollari
+ise `addModel` ile **ham geometri** kopyasi uretiyordu — bilesen hic yok.
+
+**Duzeltme (`src/application.cpp`, `include/model_maker/application.hpp`):**
+
+- Yeni cekirdek `Application::recreateComponentsOnCopies(remap, created)`:
+  kaynak->kopya uye kimligi eslemesiyle, kopyalanan uyeler uzerinde **ayni tip +
+  ayni parametrelerle** instance'i YENIDEN URETIR (levha kopyalamak yanlis
+  olurdu: aynalanan/dondurulen kopyada levha da aynalanmali/donmeli; dogru
+  geometriyi generator verir).
+- Bilesenin sahip oldugu TUM canli cocuklar da kopyalandiysa (tam secim)
+  `Document` zaten klonlar -> ikinci kez instance ACILMAZ (cift kayit yok).
+- Ayna (`mirrorSelection`), dizi (`arraySelection`, item bazinda esleme),
+  ofset (`offsetSelection`) ve kopyala (`copyModelsAndRecompute`) bu cekirdege
+  baglandi; `commitTransformPoint` artik komut yollarini tekrar etmiyor.
+- **Tek Undo:** `applyComponentFromParts(..., shareOpenRecord=true)` ikinci
+  snapshot acmaz; basarisizlikta cagiran `rollbackOpenRecord()` ile TUM komutu
+  geri alir (fail-closed, yarim kopya kalmaz, Turkce uyari yazilir).
+- **Katı taban sirasi:** kopyalarin `rebuildCutBaseSolid` cagrisi bilesen
+  uretiminden ONCE yapilir; aksi halde bulon deligi Boolean'i
+  "bulon deligi uygulanamadi (part id=..)" ile reddediyordu (olculdu).
+
+**GT:** `tests/gt1/t50_kopya_component.json` (39 adim, GDI + GPU yesil):
+kopyala / ayna / 3'lu dizi sonrasi `componentCount` 1->2->3, yeni
+`expect.componentUniqueMembers` ayni (ana, ikincil) uye ciftini paylasan iki
+instance'i **HATA** sayar (kopya orijinale baglanirsa yakalanir),
+`componentAttached` baglilik, her komut sonrasi **tek** `edit.undo` instance
+sayisini 1'e dondurur, kaydet/ac sonrasi 3 instance korunur. Regresyon:
+`t27` (kesim duzlemi kopya), `t43`, `t47` yesil.
+
+**Kapi:** tam derleme + tam ctest **185/185** (`/c/work/mm-logs/kopya-gate.log`).
+Kontrat degismedi (1.25.0), digest degismedi -> **Studio REPIN gerekmiyor**.
+
 ## Siradaki
 
 - **Haunch "kolon 90° donuyor"**: kullanici verisi (.mmw ya da tikla sirasi)
