@@ -1301,7 +1301,7 @@ void ComponentLivePreviewWidget::mouseReleaseEvent(QMouseEvent* e) {
     QWidget::mouseReleaseEvent(e);
 }
 void ComponentLivePreviewWidget::wheelEvent(QWheelEvent* e) {
-    zoom_=std::clamp(zoom_*std::pow(1.12,e->angleDelta().y()/120.0),0.2,8.0);
+    zoom_=std::clamp(zoom_*std::pow(1.18,e->angleDelta().y()/120.0),0.2,8.0);
     positionEditors();update();e->accept();
 }
 } // namespace mm

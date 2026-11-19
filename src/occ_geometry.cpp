@@ -727,6 +727,29 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
     return BRepBuilderAPI_Transform(prism.Shape(), trsf).Shape();
 }
 
+Vec3 profileRotationCentroidShift(const SteelProfile& profile, SectionAnchor anchor,
+                                  const Vec3& axisDirection,
+                                  const Vec3& referenceNormal,
+                                  double oldDeg, double newDeg) {
+    const double anchorOffset = profileSectionAnchorOffset(profile, anchor);
+    if (std::abs(anchorOffset) <= 1e-9 || std::abs(oldDeg - newDeg) <= 1e-9)
+        return {0.0, 0.0, 0.0};
+    const ProfileSectionFrame frame =
+        profileSectionFrame(axisDirection, referenceNormal);
+    // Kesit agirlik merkezinin (eksene gore) dunya konumu: local R(theta)*(0, ao, 0).
+    const auto dispAt = [&](double deg) {
+        const double a = deg * M_PI / 180.0;
+        const double lx = -anchorOffset * std::sin(a);
+        const double ly = anchorOffset * std::cos(a);
+        return Vec3{frame.width.x * lx + frame.height.x * ly,
+                    frame.width.y * lx + frame.height.y * ly,
+                    frame.width.z * lx + frame.height.z * ly};
+    };
+    const Vec3 oldDisp = dispAt(oldDeg);
+    const Vec3 newDisp = dispAt(newDeg);
+    return Vec3{oldDisp.x - newDisp.x, oldDisp.y - newDisp.y, oldDisp.z - newDisp.z};
+}
+
 WireframeModel shapeToWireframeWithFaces(const TopoDS_Shape& shape, double faceDeflection,
                                          int circleSegments) {
     // Tel kafes kisim = shapeToWireframe ile ayni; yuzler sonradan eklenir.

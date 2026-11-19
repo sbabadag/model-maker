@@ -1,0 +1,29 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "steps": [
+    {"profile": "HEB240"},
+    {"appColumnLevels": {"top": 3600, "bottom": 0}},
+    {"placeColumn": {"x": 0, "y": 0, "z": 0}},
+    {"expect": {"models": {"count": 1, "profiled": 1}}},
+    {"expect": {"modelAxis": {"model": 0, "fromZ": 0, "toZ": 3600, "tol": 5}}},
+    {"assignLine": {"x1": 0, "y1": 0, "z1": 3600, "x2": 6000, "y2": 0, "z2": 6526, "profile": "IPE300"}},
+    {"expect": {"models": {"count": 2, "profiled": 2}}},
+    {"expect": {"modelAxis": {"model": 1, "fromZ": 3600, "toZ": 6526, "tol": 5}}},
+    {"appComponent": {"typeId": "tekla_haunch_40", "parts": [0, 1], "params": {"haunchDepth": 240, "haunchTipDepth": 25}}},
+    {"expect": {"componentCount": {"typeId": "tekla_haunch_40", "count": 1}}},
+    {"expect": {"componentPlateGap": {"typeId": "tekla_haunch_40", "childRole": "haunch_end_plate", "against": "main", "maxGap": 1.0}}},
+    {"expect": {"componentAttached": {"typeId": "tekla_haunch_40", "maxGap": 500}}},
+    {"cmd": "view.dir.front"},
+    {"wait": 80},
+    {"cmd": "view.zoomExtents"},
+    {"wait": 80},
+    {"capture": "repro-front"},
+    {"cmd": "view.dir.iso"},
+    {"wait": 80},
+    {"cmd": "view.zoomExtents"},
+    {"wait": 80},
+    {"capture": "repro-iso"},
+    {"wait": 150}
+  ]
+}

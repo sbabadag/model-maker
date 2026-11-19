@@ -1,0 +1,29 @@
+{
+  "_comment": "KULLANICI BILDIRIMI 2026-11-17: (1) aci/props degisince 'class' maviye donuyor, (2) acili dondurme profil merkezi etrafinda olmali, (3) haunch kolonun yerini degistiriyor. Bu GT: egimli kiris + haunch + PROFIL DONUSU (appRotation) sonrasi KOLONUN geometry+rotation DEGISMEDIGINI, bilesenin hala tekla_haunch_40 kaldigini, kiris ekseninin (merkez) donus sonrasi SABIT kaldigini olcer.",
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "steps": [
+    { "profile": "HEB260" },
+    { "appColumnLevels": { "top": 4000, "bottom": 0 } },
+    { "placeColumn": { "x": 0, "y": 0, "z": 0 } },
+    { "key": "Escape" },
+    { "assignLine": { "x1": 0, "y1": 0, "z1": 4000, "x2": 5000, "y2": 0, "z2": 4600, "profile": "IPE300" } },
+    { "key": "Escape" },
+    { "expect": { "models": { "count": 2, "profiled": 2 } } },
+    { "expect": { "modelRotation": { "model": 0, "degrees": 0.0 } } },
+    { "expect": { "modelRotation": { "model": 1, "degrees": 0.0 } } },
+    { "appGeomCapture": "before" },
+    { "appComponent": { "typeId": "tekla_haunch_40", "parts": [0, 1] } },
+    { "expect": { "componentCount": { "typeId": "tekla_haunch_40", "count": 1 } } },
+    { "expect": { "modelRotation": { "model": 0, "degrees": 0.0 } } },
+    { "appGeomCompare": { "tag": "before", "only": [0], "maxDelta": 1.0 } },
+    { "appRotation": { "model": 1, "degrees": 30.0 } },
+    { "expect": { "modelRotation": { "model": 1, "degrees": 30.0 } } },
+    { "expect": { "modelRotation": { "model": 0, "degrees": 0.0 } } },
+    { "appGeomCompare": { "tag": "before", "only": [0], "maxDelta": 1.0 } },
+    { "expect": { "componentCount": { "typeId": "tekla_haunch_40", "count": 1 } } },
+    { "cmd": "view.dir.iso" },
+    { "fit": {} },
+    { "capture": { "name": "hk-01-donus-sonrasi", "target": "window" } }
+  ]
+}

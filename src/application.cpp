@@ -1824,14 +1824,14 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             }
         }
         // Touchpad/gevsemis tekerlek mikro delta'lari (|delta| < WHEEL_DELTA/4)
-        // gercek zoom sayilmaz: her biri %12 zoom + 350ms wheelNavigating_ acip
+        // gercek zoom sayilmaz: her biri %18 zoom + 350ms wheelNavigating_ acip
         // motion overlay'i kapatir, hover kareleri fallback'e duser -> flicker.
         if (wheelDelta == 0 || (wheelDelta > 0 ? wheelDelta : -wheelDelta) < WHEEL_DELTA / 4)
             return 0;
         RECT zoomClient{}; GetClientRect(canvas_, &zoomClient);
-        const double factor = wheelDelta > 0 ? 1.12 : 1.0 / 1.12;
+        const double factor = wheelDelta > 0 ? 1.18 : 1.0 / 1.18;
         // ANİ ZOOM: sönümlemeli animasyon kaldirildi — tekerlek dogrudan,
-        // tek seferde uygulanir (her detent %12, gecikme yok). Imleç capasi
+        // tek seferde uygulanir (her detent %18, gecikme yok). Imleç capasi
         // sabit: zoomXAt imlec altindaki noktaya kilitli.
         const Vec2 anchor{static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)};
         if (mode_ == EditMode::Draw2D)
@@ -8574,10 +8574,29 @@ std::size_t Application::mirrorSelection(const Vec3& first, const Vec3& second) 
     std::vector<EntityId> sources;
     copies.reserve(selectedModels_.size());
     sources.reserve(selectedModels_.size());
+    // Ayna duzlemi: aktif is duzlemi (UCS). Eksen o duzlemde DEJENERE ise
+    // (or. on/yan gorunuste dusey ayna ekseni — is duzlemi hala global XY)
+    // kamera gorus duzlemine dusulur; boylece ayna her gorunuste calisir.
+    // (Selahattin 2026-11-18: "aynalama profilleri kopyalamiyor" — on
+    // gorunuste dusey eksen XY'de tek noktaya inip ayna sessizce iptal
+    // oluyordu.)
+    WorkPlane mirrorPlane = workPlane_;
+    if (mode_ == EditMode::View3D) {
+        const Vec2 a2 = workPlane_.toPlane(first);
+        const Vec2 b2 = workPlane_.toPlane(second);
+        const double dx = b2.x - a2.x;
+        const double dy = b2.y - a2.y;
+        if (dx * dx + dy * dy < 1e-9) {
+            const Vec3 viewDir = camera_.gridViewDirection();
+            const std::array<double, 9> R = camera_.rotationMatrix();
+            const Vec3 viewUp{R[3], R[4], R[5]};
+            mirrorPlane = WorkPlane::fromCurrentView(camera_.center3D(), viewDir, viewUp);
+        }
+    }
     for (const auto index : selectedModels_) {
         if (index >= document_.models().size()) continue;
         const auto model = mode_ == EditMode::View3D
-            ? mirrorModelOnPlane(document_.models()[index], first, second, workPlane_)
+            ? mirrorModelOnPlane(document_.models()[index], first, second, mirrorPlane)
             : mirrorModel2D(document_.models()[index], first, second);
         if (!model) return 0;   // kismi uretim yok
         sources.push_back(document_.modelId(index));
@@ -10889,6 +10908,7 @@ void Application::setSelectedEntityProfileRotation(double degrees, bool openUndo
         std::int64_t profileSourceLine;
         double axisFrom[3], axisTo[3];
         double sectionNormal[3]; // kesit referans normali (yeniden uretimde korunur)
+        double profileRotation{0.0}; // ESKI aci (agirlik merkezi sabitligi icin)
         SectionAnchor sectionAnchor{SectionAnchor::Top}; // ankraj korunur
     };
     std::vector<TargetInfo> infos;
@@ -10911,6 +10931,7 @@ void Application::setSelectedEntityProfileRotation(double degrees, bool openUndo
         info.sectionNormal[0] = props.sectionNormalX;
         info.sectionNormal[1] = props.sectionNormalY;
         info.sectionNormal[2] = props.sectionNormalZ;
+        info.profileRotation = props.profileRotation;
         info.sectionAnchor = props.sectionAnchor;
         infos.push_back(std::move(info));
     }
@@ -10926,8 +10947,23 @@ void Application::setSelectedEntityProfileRotation(double degrees, bool openUndo
         const Vec3 to{info.axisTo[0], info.axisTo[1], info.axisTo[2]};
         if (std::abs(to.x - from.x) + std::abs(to.y - from.y) +
             std::abs(to.z - from.z) < 1e-9) continue;
+        // AGIRLIK MERKEZI SABITLIGI (kullanici sarti): aci degisince kesit kendi
+        // agirlik merkezi etrafinda doner, uye merkezi YER DEGISTIRMEZ. Top/Bottom
+        // ankrajli kesitte merkez eksenden ofsetli oldugu icin yeni aciyla merkez
+        // kayardi; eski merkezi korumak icin eksen ters yonde kaydirilir.
+        Vec3 effFrom = from, effTo = to;
+        const Vec3 shift = mm::profileRotationCentroidShift(
+            *profile, info.sectionAnchor,
+            Vec3{to.x - from.x, to.y - from.y, to.z - from.z},
+            Vec3{info.sectionNormal[0], info.sectionNormal[1], info.sectionNormal[2]},
+            info.profileRotation, degrees);
+        if (std::abs(shift.x) > 1e-12 || std::abs(shift.y) > 1e-12 ||
+            std::abs(shift.z) > 1e-12) {
+            effFrom = Vec3{from.x + shift.x, from.y + shift.y, from.z + shift.z};
+            effTo = Vec3{to.x + shift.x, to.y + shift.y, to.z + shift.z};
+        }
         const TopoDS_Shape solid = mm::extrudeProfileSolid(
-            *profile, from, to, degrees,
+            *profile, effFrom, effTo, degrees,
             Vec3{info.sectionNormal[0], info.sectionNormal[1], info.sectionNormal[2]},
             info.sectionAnchor);
         if (solid.IsNull()) continue;
@@ -10936,10 +10972,10 @@ void Application::setSelectedEntityProfileRotation(double degrees, bool openUndo
         solidProps.profileName = info.profileName;
         solidProps.profileRotation = degrees;
         solidProps.profileSourceLine = info.profileSourceLine;
-        solidProps.axisFromX = info.axisFrom[0]; solidProps.axisFromY = info.axisFrom[1];
-        solidProps.axisFromZ = info.axisFrom[2];
-        solidProps.axisToX = info.axisTo[0]; solidProps.axisToY = info.axisTo[1];
-        solidProps.axisToZ = info.axisTo[2];
+        solidProps.axisFromX = effFrom.x; solidProps.axisFromY = effFrom.y;
+        solidProps.axisFromZ = effFrom.z;
+        solidProps.axisToX = effTo.x; solidProps.axisToY = effTo.y;
+        solidProps.axisToZ = effTo.z;
         solidProps.sectionNormalX = info.sectionNormal[0];
         solidProps.sectionNormalY = info.sectionNormal[1];
         solidProps.sectionNormalZ = info.sectionNormal[2];

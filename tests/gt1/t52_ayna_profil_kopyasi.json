@@ -1,0 +1,17 @@
+{
+  "_comment": "KULLANICI (2026-11-18): 'aynalama profilleri kopyalamiyor'. Tek profilli kolonu 2D (front) gorunumde aynalayip profil kopyasinin korunup korunmadigini olcer.",
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "steps": [
+    {"profile": "HEB240"},
+    {"appColumnLevels": {"top": 4000, "bottom": 0}},
+    {"placeColumn": {"x": 0, "y": 0, "z": 0}},
+    {"key": "Escape"},
+    {"expect": {"models": {"count": 1, "profiled": 1}}},
+    {"cmd": "view.dir.front"},
+    {"wait": 60},
+    {"select": [0]},
+    {"appMirror": {"p1": [5000, 0, 0], "p2": [5000, 0, 4000], "indices": [0]}},
+    {"expect": {"models": {"count": 2, "profiled": 2}}}
+  ]
+}

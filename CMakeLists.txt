@@ -228,7 +228,7 @@ if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
                      t27_b8_kesim_duzlemi_kopya t28_b5_view_cube
                      t29_t1_aks_grid t30_t2_kolon_profil t31_t3_kiris_mertek
                      t32_t5_secim t33_t4_yardimci_cizgi t34_t6_ozellikler_paneli
-                     t35_t7_duzenle t36_t8_kesimler t37_t9_baglantilar t38_t10_bulon_kaynak t39_t11_gorunumler t40_t12_kayit t41_t13_kisayollar t42_t14_cizim t43_t12_donus_bilesen t44_t10_kaynak_sayimi t45_t13_f7_hayalet t46_haunch_kolon_bozulmasi t47_t12b_donus_recompute t48_t12b_paket_donus t49_f7_hayalet_tusu t50_kopya_component t51_mirror_coklu_secim)
+                     t35_t7_duzenle t36_t8_kesimler t37_t9_baglantilar t38_t10_bulon_kaynak t39_t11_gorunumler t40_t12_kayit t41_t13_kisayollar t42_t14_cizim t43_t12_donus_bilesen t44_t10_kaynak_sayimi t45_t13_f7_hayalet t46_haunch_kolon_bozulmasi t47_t12b_donus_recompute t48_t12b_paket_donus t49_f7_hayalet_tusu t50_kopya_component t51_mirror_coklu_secim t52_ayna_profil_kopyasi)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json
@@ -841,6 +841,14 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_rotation_no_writeback_test PRIVATE model_maker_core)
     add_test(NAME model_maker_rotation_no_writeback_test
              COMMAND model_maker_rotation_no_writeback_test)
+
+    # AYNALAMA + PROFIL KOPYASI: 2D/3D aynada profilli uyenin profileName + eksen
+    # + sectionNormal'i dogru yansir (kati yeniden uretim ekseni bozulmaz).
+    add_executable(model_maker_mirror_profile_copy_test
+        tests/mirror_profile_copy_test.cpp)
+    target_link_libraries(model_maker_mirror_profile_copy_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_mirror_profile_copy_test
+             COMMAND model_maker_mirror_profile_copy_test)
 
     # MM-7 item 2: VARSAYILAN End Plate kapsam testi — tum IPE/HEA/HEB kiris
     # kesitleri x {M16,M20,M24} x {HEA300,HEB300}: varsayilan plan ya checks'ten
@@ -1463,6 +1471,11 @@ if(BUILD_TESTING)
         add_executable(model_maker_occ_end_plate_144_geometry tests/occ_end_plate_144_geometry_test.cpp)
         target_link_libraries(model_maker_occ_end_plate_144_geometry PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_end_plate_144_geometry COMMAND model_maker_occ_end_plate_144_geometry)
+        # PROFIL DONUSU MERKEZ SABITLIGI: aci degisince kesit kendi agirlik merkezi
+        # etrafinda doner; Top/Bottom ankrajda eksen kaymasi telafi edilir (gercek OCCT).
+        add_executable(model_maker_occ_profile_rotation_centroid tests/occ_profile_rotation_centroid_test.cpp)
+        target_link_libraries(model_maker_occ_profile_rotation_centroid PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_profile_rotation_centroid COMMAND model_maker_occ_profile_rotation_centroid)
         # GERCEK OCC KAYNAK KATISI (Phase W3): fillet weld katisinin hacmi/
         # BRepCheck + T-joint temas kenari tespiti + tek/cift tarafli + ayrik
         # fallback. GERCEK OCCT ile sayisal dogrulanir.

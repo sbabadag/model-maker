@@ -69,6 +69,17 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
                                      const Vec3& referenceNormal = Vec3{0.0, 0.0, 1.0},
                                      SectionAnchor anchor = SectionAnchor::Top);
 
+// Agirlik merkezi sabitligi (kullanici sarti): profil acisi oldDeg -> newDeg
+// degisince kesit KENDI agirlik merkezi etrafinda donmeli, merkez YER
+// DEGISTIRMEMELI. Top/Bottom ankrajli kesitte merkez eksenden ofsetli oldugu
+// icin yeni aciyla merkez kayar; bunu telafi etmek icin EKSEN bu vektor kadar
+// kaydirilir (extrudeProfileSolid'un anchor-ofset + donme sirasiyla BIREBIR ayni
+// cerceveyi kullanir). Center ankrajda veya aci degismediyse {0,0,0} doner.
+Vec3 profileRotationCentroidShift(const SteelProfile& profile, SectionAnchor anchor,
+                                  const Vec3& axisDirection,
+                                  const Vec3& referenceNormal,
+                                  double oldDeg, double newDeg);
+
 WireframeModel shapeToWireframeWithFaces(const TopoDS_Shape& shape, double faceDeflection,
                                          int circleSegments = 48);
 
