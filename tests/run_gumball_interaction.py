@@ -42,8 +42,11 @@ shell = r'''
 #include "model_maker/component_glyph.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/end_plate.hpp"
+#include "model_maker/drafting.hpp"
+#include "model_maker/snap_settings.hpp"
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cwchar>
 #include <cwctype>
@@ -65,6 +68,10 @@ void ReleaseCapture() { captured = false; }
 constexpr int MB_ICONWARNING = 0;
 void MessageBeep(int) {}
 void SetFocus(HWND) {}
+// SNAP SOLMA (H-6): armSnapFadeTimer govdesi pencere timer'i kullanir.
+using UINT = unsigned int;
+long SetTimer(HWND, unsigned long, UINT, void*) { return 1; }
+long KillTimer(HWND, unsigned long) { return 1; }
 // Shift-kopya testi icin tek sanal tus: g_shiftDown = 0x8000 -> Shift basili.
 constexpr int VK_SHIFT = 0x10;
 int g_shiftDown = 0;
@@ -85,6 +92,17 @@ public:
     bool profileGrip_{}, workPlanePicking_{}, zoomWindowActive_{};
     WorkPlane workPlane_{};  // gumballUpdateFrame UCS hizalamasi icin
     bool viewCubeManipulating_{}, viewCubeDragged_{}, rotating_{}, ctrlRotatePending_{};
+    // SNAP SOLMA (H-6): application.hpp'de bu fields diliminin DISINDA kalan
+    // uyeler — cikarilan verbatim govdeler (clearSnapFade / armSnapFadeTimer /
+    // fadingSnapVisible) bunlari kullanir.
+    HWND window_{1};
+    SnapSettings snapSettings_;
+    std::optional<SnapResult> fadingSnap_;
+    std::chrono::steady_clock::time_point fadingSnapSince_{};
+    bool snapFadeTimerArmed_{false};
+    void clearSnapFade();
+    void armSnapFadeTimer();
+    bool fadingSnapVisible() const noexcept;
     // MODERN VIEWCUBE: hedef artik yuz/kenar/kose/ISO ayrimli bir tip.
     std::optional<ViewCubeTarget> viewCubePressedView_;
     void applyViewCubeTarget(const ViewCubeTarget&) {}

@@ -107,11 +107,13 @@ struct Document {
     std::vector<int> models_{0, 1};   // iki model (indeks)
     std::vector<int> instances_{};
     std::vector<int> bolts_{};
+    std::vector<int> cuts_{};
     std::vector<Vec3> copyOffsets;
 
     const std::vector<int>& models() const { return models_; }
     const std::vector<int>& componentInstances() const { return instances_; }
     const std::vector<int>& boltGroups() const { return bolts_; }
+    const std::vector<int>& cutModifiers() const { return cuts_; }
     EntityId modelId(std::size_t index) const { return index; }
     void copyModels(const std::vector<std::size_t>& indices, const Vec3& displacement) {
         copyOffsets.push_back(displacement);

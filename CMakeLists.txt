@@ -1132,7 +1132,8 @@ if(BUILD_TESTING)
     add_executable(model_maker_haunch_topanchor_placement_test tests/haunch_topanchor_placement_test.cpp)
     target_link_libraries(model_maker_haunch_topanchor_placement_test PRIVATE model_maker_core)
     target_compile_options(model_maker_haunch_topanchor_placement_test PRIVATE -Wall -Wextra -Wpedantic)
-    add_test(NAME model_maker_haunch_topanchor_placement_test COMMAND model_maker_haunch_topanchor_placement_test)
+    add_test(NAME model_maker_haunch_topanchor_placement_test COMMAND model_maker_haunch_topanchor_placement_test
+             WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 
     # TEMAS DENETIMI (H-9): uyeler 3B'de degmiyorsa baglanti REDDEDILIR.
     # Gercek kullanici modeli: mertek Y=0, kolon Y=-250 -> alin levhasi
@@ -1157,7 +1158,8 @@ if(BUILD_TESTING)
     add_executable(model_maker_haunch_cap_gap_test tests/haunch_cap_gap_test.cpp)
     target_link_libraries(model_maker_haunch_cap_gap_test PRIVATE model_maker_core)
     target_compile_options(model_maker_haunch_cap_gap_test PRIVATE -Wall -Wextra -Wpedantic)
-    add_test(NAME model_maker_haunch_cap_gap_test COMMAND model_maker_haunch_cap_gap_test)
+    add_test(NAME model_maker_haunch_cap_gap_test COMMAND model_maker_haunch_cap_gap_test
+             WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 
     # GRID KESISIM SNAP TOLERANSI: tolerans disindaki aks kesisimine snap YOK,
     # obje snap'i grid'i ezer (Selahattin 2026-10-31).
